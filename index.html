@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mapa Mental — O Coração Enferrujado</title>
+
+  <!-- D3.js -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#0f1620;
+      --panel2:#101b28;
+      --text:#e8eef6;
+      --muted:#9bb0c7;
+      --stroke:#2a3a4f;
+      --link:#3a5676;
+      --node:#122235;
+      --node2:#152a42;
+      --accent:#7dd3fc;
+      --warn:#fbbf24;
+      --bad:#fb7185;
+      --good:#86efac;
+    }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    .app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      background: linear-gradient(180deg, rgba(15,22,32,0.98), rgba(15,22,32,0.92));
+      border-bottom: 1px solid rgba(42,58,79,0.6);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .title h1 { margin: 0; font-size: 14px; letter-spacing: .3px; font-weight: 700; }
+    .title p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .controls input {
+      width: 260px; max-width: 42vw;
+      padding: 9px 10px;
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid rgba(42,58,79,0.9);
+      border-radius: 10px;
+      outline: none;
+    }
+    .controls input::placeholder { color: rgba(155,176,199,0.75); }
+
+    .btn {
+      padding: 9px 10px;
+      background: var(--panel2);
+      border: 1px solid rgba(42,58,79,0.9);
+      color: var(--text);
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 12px;
+      user-select: none;
+      transition: transform .06s ease, background .12s ease;
+    }
+    .btn:hover { background: rgba(16,27,40,0.9); }
+    .btn:active { transform: translateY(1px); }
+
+    .main { display: grid; grid-template-columns: 1fr 360px; gap: 12px; padding: 12px; height: 100%; box-sizing: border-box; }
+    @media (max-width: 980px) { .main { grid-template-columns: 1fr; } }
+
+    .canvas {
+      background: radial-gradient(1200px 600px at 20% 20%, rgba(125,211,252,0.06), rgba(0,0,0,0)) ,
+                  radial-gradient(900px 540px at 80% 40%, rgba(134,239,172,0.05), rgba(0,0,0,0));
+      border: 1px solid rgba(42,58,79,0.6);
+      border-radius: 16px;
+      overflow: hidden;
+      position: relative;
+      min-height: 520px;
+    }
+
+    .sidepanel {
+      background: rgba(15,22,32,0.72);
+      border: 1px solid rgba(42,58,79,0.6);
+      border-radius: 16px;
+      padding: 12px;
+      overflow: auto;
+      max-height: calc(100vh - 86px);
+    }
+
+    .card {
+      background: rgba(16,27,40,0.7);
+      border: 1px solid rgba(42,58,79,0.6);
+      border-radius: 14px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .card h2 { margin: 0 0 6px; font-size: 13px; }
+    .card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .tagrow { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .tag {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(42,58,79,0.7);
+      background: rgba(18,34,53,0.7);
+      color: var(--muted);
+    }
+    .tag.good{ border-color: rgba(134,239,172,0.35); color: rgba(134,239,172,0.95); }
+    .tag.warn{ border-color: rgba(251,191,36,0.35); color: rgba(251,191,36,0.95); }
+    .tag.bad{ border-color: rgba(251,113,133,0.35); color: rgba(251,113,133,0.95); }
+    .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+
+    /* SVG styles */
+    svg { width: 100%; height: 100%; }
+    .link { fill: none; stroke: var(--link); stroke-width: 1.6px; opacity: 0.9; }
+    .node rect {
+      fill: rgba(18,34,53,0.92);
+      stroke: rgba(58,86,118,0.85);
+      stroke-width: 1px;
+      rx: 10px; ry: 10px;
+    }
+    .node rect.hover {
+      stroke: rgba(125,211,252,0.95);
+      filter: drop-shadow(0 10px 16px rgba(0,0,0,0.38));
+    }
+    .node text { font-size: 12px; fill: var(--text); pointer-events: none; }
+    .node .subtitle { fill: rgba(155,176,199,0.92); font-size: 11px; }
+    .node .pill {
+      font-size: 10px;
+      fill: rgba(155,176,199,0.95);
+    }
+
+    .node.highlight rect { stroke: rgba(125,211,252,0.98); stroke-width: 2px; }
+    .node.dim { opacity: 0.22; }
+  </style>
+</head>
+
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="title">
+      <h1>Mapa Mental Interativo — O Coração Enferrujado</h1>
+      <p>Clique nos nós para expandir/recolher • Arraste para mover • Scroll para zoom • Busca destaca caminhos</p>
+    </div>
+    <div class="controls">
+      <input id="search" placeholder="Buscar (ex.: Freya, Minhocão, Cervo, Verdade)..." />
+      <button class="btn" id="expandAll">Expandir tudo</button>
+      <button class="btn" id="collapseAll">Recolher tudo</button>
+      <button class="btn" id="center">Centralizar</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="canvas" id="canvas"></div>
+
+    <div class="sidepanel">
+      <div class="card">
+        <h2>Detalhes do nó</h2>
+        <p id="nodeTitle" style="color: var(--text); font-weight: 700; margin-bottom:6px;">Clique em um nó…</p>
+        <p id="nodeDesc">Aqui vão aparecer descrição, mecânicas e consequências do item selecionado.</p>
+        <div class="tagrow" id="nodeTags"></div>
+        <p class="hint">Dica: use a busca pra achar “Minhocão”, “Verdade Histórica”, “Rastrear”, etc. O caminho até o nó fica destacado.</p>
+      </div>
+
+      <div class="card">
+        <h2>Como embutir no Notion</h2>
+        <p>
+          1) Hospede este arquivo (GitHub Pages/Netlify/Vercel).<br/>
+          2) No Notion: <b>/embed</b> e cole a URL.<br/>
+          3) Ajuste o tamanho do embed (recomendo largura total).
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Notas de sessão (estado atual)</h2>
+        <p>
+          Torvald e Ragnar mortos • Edda viva • Freya migrou pelo Coração de Ferro • Cervo-de-Ferro ainda preso (Helvétia).
+        </p>
+        <div class="tagrow">
+          <span class="tag warn">Relógio 24–72h</span>
+          <span class="tag bad">Território degrada</span>
+          <span class="tag good">Gancho Ato II</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/** =========================
+ *  DADOS (edite à vontade)
+ *  ========================= */
+const data = {
+  id: "root",
+  title: "O Coração Enferrujado",
+  subtitle: "Caminhos de ação da matilha",
+  desc: "Mapa mental de escolhas/ramificações: investigação → decisões morais → perseguição → consequências e direção da campanha.",
+  tags: ["Strong Start", "Escolhas difíceis", "Consequências permanentes"],
+  children: [
+    {
+      id: "ato1",
+      title: "Ato I — Microeventos",
+      subtitle: "Investigar facetas do problema",
+      desc: "Três microeventos paralelos que convergem para o Prédio do Triângulo (Rua Helvétia).",
+      tags: ["Investigação", "Pistas", "Convergência"],
+      children: [
+        {
+          id: "micro1",
+          title: "O Cão e o Santo",
+          subtitle: "Igreja / fé distorcida",
+          desc: "Padre aliado tem a fé distorcida; runas do Cult of Fenris ligam religião, desespero humano e Fúria.",
+          tags: ["Cult of Fenris", "Runas", "Fúria"]
+        },
+        {
+          id: "micro2",
+          title: "O Corpo e o Cão",
+          subtitle: "Assassinato ritualístico",
+          desc: "Fúria manifestada fisicamente: corpo fundido a ferro. Pistas levam à empresa Santa Viga.",
+          tags: ["Santa Viga", "Ritual", "Ferro"]
+        },
+        {
+          id: "micro3",
+          title: "A Mensagem no Vidro",
+          subtitle: "Espírito fragmentado / reflexos",
+          desc: "Fragmento comunica que o Cervo-de-Ferro está morrendo e que a Santa Viga é fonte do eco espiritual.",
+          tags: ["Cervo-de-Ferro", "Eco", "Reflexos"]
+        },
+        {
+          id: "converg",
+          title: "Convergência",
+          subtitle: "Prédio do Triângulo — Helvétia",
+          desc: "Ponto único onde as pistas se encontram. O prédio vira altar de Fúria (Primeiro Selo).",
+          tags: ["Primeiro Selo", "Helvétia", "Altar"]
+        }
+      ]
+    },
+
+    {
+      id: "cena1",
+      title: "Cena 1 — Primeiro Selo",
+      subtitle: "Prédio do Triângulo (Helvétia)",
+      desc: "Humanos possuídos por fragmentos do guardião e o Cervo-de-Ferro acorrentado (filtro do corredor urbano).",
+      tags: ["Dilema moral", "Guardião", "Filtro Wyld/Weaver"],
+      children: [
+        {
+          id: "decisao_cervo",
+          title: "Decisão central",
+          subtitle: "Libertar vs Destruir (ou manter preso)",
+          desc: "Escolha define tom: compaixão, pragmatismo ou desespero. Afeta o fluxo Hauglosk e o avanço do ritual.",
+          tags: ["Compromisso", "Tom da campanha", "Consequências"],
+          children: [
+            {
+              id: "libertar",
+              title: "Libertar o Cervo-de-Ferro",
+              subtitle: "Ritual pode continuar",
+              desc: "Liberta o filtro; parte do Hauglosk ainda ‘sobra’ e busca Freya. O ritual pode seguir adiante (com novos custos).",
+              tags: ["Compaixão", "Risco", "Freya fortalecida?"]
+            },
+            {
+              id: "destruir",
+              title: "Destruir o Cervo-de-Ferro",
+              subtitle: "Interrompe o plano (agora)",
+              desc: "Interrompe a canalização atual e força Freya a buscar outra forma. Mas mata o guardião do território.",
+              tags: ["Pragmatismo", "Custo ético", "Território instável"]
+            },
+            {
+              id: "estado_atual",
+              title: "Estado atual (sessão)",
+              subtitle: "Não libertaram; Cervo ainda preso",
+              desc: "A matilha não libertou o Cervo. Freya ainda puxa energia filtrada em direção ao Largo (pós-cena 2).",
+              tags: ["Canon atual", "Cervo preso", "Pressão"]
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      id: "cena2",
+      title: "Cena 2 — Segundo Selo",
+      subtitle: "Largo Coração de Jesus",
+      desc: "Freya confronta fisicamente e ideologicamente. A Umbra vira campo de batalha (dor, miséria e Fúria).",
+      tags: ["Freya", "Ideologia", "Cães de Ferro"],
+      children: [
+        {
+          id: "desfechos_largo",
+          title: "Desfechos possíveis",
+          subtitle: "Como a cena termina",
+          desc: "A cena pode encerrar em conflito físico, confronto ideológico ou hesitação (ancoragem mais forte). Freya sobrevive.",
+          tags: ["Ritmo", "Drama", "Antagonista recorrente"],
+          children: [
+            {
+              id: "fisico",
+              title: "Conflito físico",
+              subtitle: "Cães de Ferro / Hauglosk",
+              desc: "Vitória/derrota física altera recursos e perdas. Pode escalar a violência no território depois.",
+              tags: ["Combate", "Escalada", "Risco"]
+            },
+            {
+              id: "ideologico",
+              title: "Confronto ideológico",
+              subtitle: "Fé e limites morais",
+              desc: "Freya não é caricata: “o equilíbrio falhou”. Testa convicções e cria fissuras internas.",
+              tags: ["Debate", "Dúvida", "Tentação"]
+            },
+            {
+              id: "hesitacao",
+              title: "Fracasso / hesitação",
+              subtitle: "2º coração ancora mais",
+              desc: "Se hesitam, o ponto de ressonância fixa mais Fúria. Território degrada mais rápido nas 24–72h.",
+              tags: ["Pressão", "Consequência", "Relógio acelera"]
+            }
+          ]
+        },
+
+        {
+          id: "pos_comb",
+          title: "Pós-combate (canon)",
+          subtitle: "Freya entra no Coração de Ferro",
+          desc: "Freya se dissolve no ritmo do Coração e desaparece ‘onde a cidade não toca o chão’. Edda dá a pista do ‘viaduto’.",
+          tags: ["Migração", "Pista Edda", "Ato II"]
+        }
+      ]
+    },
+
+    {
+      id: "ato2",
+      title: "Ato II — Para onde Freya vai",
+      subtitle: "Minhocão (Umbra Profunda Urbana)",
+      desc: "Freya pretende ancorar o ‘pulmão’ Hauglosk e criar atalho umbral Cantareira ↔ Centro ↔ Oeste.",
+      tags: ["Minhocão", "Pulmão Hauglosk", "Corredor suspenso"],
+      children: [
+        {
+          id: "seguir",
+          title: "Como seguir Freya",
+          subtitle: "3 métodos (custo/risco)",
+          desc: "Os jogadores escolhem o estilo: instinto/fúria, ritual/verdade, ou perseguição imediata.",
+          tags: ["Rota", "Custo", "Risco"],
+          children: [
+            {
+              id: "met1",
+              title: "1) Rastrear pelo Eco do Hauglosk",
+              subtitle: "Instinto + Fúria (estendido)",
+              desc: "Teste estendido: Dif. 3; 5 sucessos acumulados. Falhas: gastar Fúria ou sofrer impulso Hauglosk.",
+              tags: ["Instinto", "Estendido", "Impulso Hauglosk"]
+            },
+            {
+              id: "met2",
+              title: "2) Rastro quebrado do Cervo-de-Ferro",
+              subtitle: "Rituais + Renown + oferenda",
+              desc: "Dif. 3 + oferenda significativa (Renown/Talismã/juramento). Sucesso revela rotas antigas. Falha: dano em Força de Vontade ou info incompleta.",
+              tags: ["Sacrifício", "Verdade", "Cervo"]
+            },
+            {
+              id: "met3",
+              title: "3) Perseguição direta — Caminhar a Neblina",
+              subtitle: "Rituais + Raciocínio (Dif. 4)",
+              desc: "Rite of the Opened Path (urbano). Sucesso: chegam antes (vantagem). Falha: chegam depois (Freya integrada; espíritos hostis).",
+              tags: ["Alto risco", "Alta recompensa", "Chegar antes/depois"]
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      id: "relogio",
+      title: "Relógio — 24 a 72 horas",
+      subtitle: "Território degrada",
+      desc: "Mesmo seguindo Freya, o Eco já venceu parcialmente: espíritos exigem oferendas, humanos escalam violência, sonhos com metal.",
+      tags: ["Pressão", "Escalada", "Zonas mortas"],
+      children: [
+        {
+          id: "territorio",
+          title: "Gerir o território",
+          subtitle: "Manter estabilidade",
+          desc: "Conflitos: Rituais+Empatia (Dif.3), Autocontrole+Instinto, Liderança+Renown. Falhas acumuladas criam zonas mortas espirituais.",
+          tags: ["Gestão", "Risco social", "Espíritos urbanos"]
+        },
+        {
+          id: "ignorar",
+          title: "Ignorar e correr atrás",
+          subtitle: "Ganha tempo, perde chão",
+          desc: "Chegam mais rápido ao Minhocão, mas o território piora, alianças quebram e a reputação da matilha cai.",
+          tags: ["Tempo", "Custo", "Reputação"]
+        }
+      ]
+    },
+
+    {
+      id: "verdade",
+      title: "Ramo — Verdade Histórica",
+      subtitle: "Caern antigo / Reflexo do Trianon",
+      desc: "Ancestrais revelam: o Cervo-de-Ferro foi sacrificado por decisão política (preservar um caern ‘nobre’ em troca do corredor urbano).",
+      tags: ["Passado mal resolvido", "Tradição", "Ruptura"],
+      children: [
+        {
+          id: "confronto_anc",
+          title: "Confrontar ancestral",
+          subtitle: "Renown + Autocontrole",
+          desc: "Sucesso: Sabedoria. Falha: perda de Honra ou tensão política.",
+          tags: ["Honra", "Sabedoria", "Conflito"]
+        },
+        {
+          id: "refazer",
+          title: "Refazer o juramento",
+          subtitle: "Rituais + Sacrifício (Dif.3)",
+          desc: "Exige perda real (Renown/Talismã/juramento). Abre caminho para pacto novo urbano Wyld/Weaver.",
+          tags: ["Pacto novo", "Perda real", "Reforma"]
+        },
+        {
+          id: "julgar",
+          title: "Julgar o passado",
+          subtitle: "Debate + Instinto",
+          desc: "Pode dividir a matilha: lealdade à Nação vs reconstrução sem permissão.",
+          tags: ["Divisão", "Política", "Identidade"]
+        }
+      ]
+    },
+
+    {
+      id: "direcao",
+      title: "Direção da campanha",
+      subtitle: "3 eixos (não exclusivos)",
+      desc: "Depois do Strong Start, o foco vira ‘que tipo de Garou a matilha será’. Freya vira espelho/temptação/futuro possível.",
+      tags: ["Escala", "Tema", "Crônica"],
+      children: [
+        {
+          id: "guerra",
+          title: "1) Guerra Ideológica",
+          subtitle: "Outras matilhas ouvem Freya",
+          desc: "Freya espalha a ‘verdade’ e sua leitura do fim do mundo. A matilha vira referência (ou inimiga).",
+          tags: ["Propaganda", "Conflito social", "Alianças"]
+        },
+        {
+          id: "reforma",
+          title: "2) Reforma Espiritual",
+          subtitle: "Novo pacto urbano",
+          desc: "Reequilibrar Wyld/Weaver no corredor espiritual urbano e reconstruir um guardião (ou sucessor) sem repetir a traição.",
+          tags: ["Construção", "Rituais", "Território"]
+        },
+        {
+          id: "queda",
+          title: "3) Queda Controlada",
+          subtitle: "Usar o Hauglosk",
+          desc: "A matilha usa a Fúria como ferramenta — sem virar ferramenta dela. Alto risco de corrupção e perda de controle.",
+          tags: ["Fio da navalha", "Poder", "Preço"]
+        }
+      ]
+    }
+  ]
+};
+
+/** =========================
+ *  RENDER (árvore colapsável)
+ *  ========================= */
+const container = document.getElementById("canvas");
+const W = () => container.clientWidth;
+const H = () => container.clientHeight;
+
+const svg = d3.select(container).append("svg");
+const gZoom = svg.append("g");
+
+const linkLayer = gZoom.append("g").attr("class", "links");
+const nodeLayer = gZoom.append("g").attr("class", "nodes");
+
+const zoom = d3.zoom()
+  .scaleExtent([0.25, 2.4])
+  .on("zoom", (event) => gZoom.attr("transform", event.transform));
+
+svg.call(zoom);
+
+let root = d3.hierarchy(data, d => d.children);
+root.x0 = H()/2;
+root.y0 = 0;
+
+const NODE_W = 260;
+const NODE_H_MIN = 54;
+const LEVEL_GAP = 220;
+const V_GAP = 26;
+
+function collapse(d){
+  if(d.children){
+    d._children = d.children;
+    d._children.forEach(collapse);
+    d.children = null;
+  }
+}
+
+function expand(d){
+  if(d._children){
+    d.children = d._children;
+    d._children = null;
+  }
+  if(d.children) d.children.forEach(expand);
+}
+
+function collapseAll(){
+  root.children?.forEach(collapse);
+  update(root);
+}
+
+function expandAll(){
+  root.children?.forEach(expand);
+  update(root);
+}
+
+collapseAll(); // inicia colapsado
+
+function diagonal(s, d){
+  return `M${s.y},${s.x}
+          C${(s.y + d.y)/2},${s.x}
+           ${(s.y + d.y)/2},${d.x}
+           ${d.y},${d.x}`;
+}
+
+function wrapText(selection, text, width){
+  // quebra em linhas usando tspans
+  const words = (text || "").split(/\s+/).filter(Boolean);
+  let line = [];
+  let lineNumber = 0;
+  const lineHeight = 1.1; // em "em"
+  const y = selection.attr("y");
+  const x = selection.attr("x");
+  let tspan = selection.text(null).append("tspan").attr("x", x).attr("y", y).attr("dy", "0em");
+
+  for (let i=0; i<words.length; i++){
+    line.push(words[i]);
+    tspan.text(line.join(" "));
+    if (tspan.node().getComputedTextLength() > width){
+      line.pop();
+      tspan.text(line.join(" "));
+      line = [words[i]];
+      tspan = selection.append("tspan")
+        .attr("x", x)
+        .attr("y", y)
+        .attr("dy", `${++lineNumber * lineHeight}em`)
+        .text(words[i]);
+    }
+  }
+  return lineNumber + 1;
+}
+
+function nodeHeight(d){
+  // altura dinâmica conforme título/subtítulo
+  const titleLines = Math.min(3, Math.ceil((d.data.title || "").length / 28));
+  const subLines = d.data.subtitle ? Math.min(2, Math.ceil(d.data.subtitle.length / 36)) : 0;
+  const lines = titleLines + subLines;
+  return Math.max(NODE_H_MIN, 18 + lines*16);
+}
+
+function update(source){
+  const dx = NODE_H_MIN + V_GAP;
+  const dy = LEVEL_GAP;
+
+  const treeLayout = d3.tree().nodeSize([dx, dy]);
+  treeLayout(root);
+
+  // Ajuste do viewBox
+  const nodes = root.descendants();
+  const links = root.links();
+
+  let x0 = Infinity, x1 = -Infinity;
+  nodes.forEach(d => { if(d.x < x0) x0 = d.x; if(d.x > x1) x1 = d.x; });
+
+  svg.attr("viewBox", [ -50, x0 - 80, W() + 100, (x1 - x0) + 160 ]);
+
+  // LINKS
+  const link = linkLayer.selectAll("path.link")
+    .data(links, d => d.target.data.id);
+
+  link.enter()
+    .append("path")
+    .attr("class", "link")
+    .attr("d", d => {
+      const o = {x: source.x0, y: source.y0};
+      return diagonal(o, o);
+    })
+    .merge(link)
+    .transition()
+    .duration(260)
+    .attr("d", d => diagonal(d.source, d.target));
+
+  link.exit()
+    .transition()
+    .duration(220)
+    .attr("d", d => {
+      const o = {x: source.x, y: source.y};
+      return diagonal(o, o);
+    })
+    .remove();
+
+  // NODES
+  const node = nodeLayer.selectAll("g.node")
+    .data(nodes, d => d.data.id);
+
+  const nodeEnter = node.enter()
+    .append("g")
+    .attr("class", "node")
+    .attr("transform", d => `translate(${source.y0},${source.x0})`)
+    .style("cursor", "pointer")
+    .on("click", (event, d) => {
+      if (d.children) { d._children = d.children; d.children = null; }
+      else { d.children = d._children; d._children = null; }
+      update(d);
+      selectNode(d);
+      event.stopPropagation();
+    })
+    .on("mouseenter", function(){ d3.select(this).select("rect").classed("hover", true); })
+    .on("mouseleave", function(){ d3.select(this).select("rect").classed("hover", false); });
+
+  nodeEnter.append("rect")
+    .attr("width", NODE_W)
+    .attr("height", d => nodeHeight(d))
+    .attr("x", -NODE_W/2)
+    .attr("y", d => -nodeHeight(d)/2);
+
+  // título
+  nodeEnter.append("text")
+    .attr("x", -NODE_W/2 + 12)
+    .attr("y", d => -nodeHeight(d)/2 + 18)
+    .each(function(d){
+      const lines = wrapText(d3.select(this), d.data.title, NODE_W - 24);
+      // guardamos linhas para calcular subtitle
+      d._titleLines = lines;
+    });
+
+  // subtítulo
+  nodeEnter.append("text")
+    .attr("class", "subtitle")
+    .attr("x", -NODE_W/2 + 12)
+    .attr("y", d => {
+      const base = -nodeHeight(d)/2 + 18;
+      const offset = (d._titleLines ? (d._titleLines*16) : 16) + 6;
+      return base + offset;
+    })
+    .text(d => d.data.subtitle || "");
+
+  // indicador de filhos
+  nodeEnter.append("text")
+    .attr("class", "pill")
+    .attr("x", NODE_W/2 - 44)
+    .attr("y", d => -nodeHeight(d)/2 + 18)
+    .text(d => (d.children || d._children) ? ((d.children ? "−" : "+") + " ramos") : "");
+
+  // UPDATE + TRANSITION
+  const nodeMerge = nodeEnter.merge(node);
+
+  nodeMerge.select("rect")
+    .transition().duration(260)
+    .attr("height", d => nodeHeight(d))
+    .attr("y", d => -nodeHeight(d)/2);
+
+  nodeMerge.select(".pill")
+    .text(d => (d.children || d._children) ? ((d.children ? "−" : "+") + " ramos") : "");
+
+  nodeMerge.transition()
+    .duration(260)
+    .attr("transform", d => `translate(${d.y},${d.x})`);
+
+  node.exit()
+    .transition().duration(220)
+    .attr("transform", d => `translate(${source.y},${source.x})`)
+    .remove();
+
+  // Stash old positions for transition.
+  nodes.forEach(d => {
+    d.x0 = d.x;
+    d.y0 = d.y;
+  });
+}
+
+function selectNode(d){
+  // side panel
+  document.getElementById("nodeTitle").textContent = `${d.data.title}${d.data.subtitle ? " — " + d.data.subtitle : ""}`;
+  document.getElementById("nodeDesc").textContent = d.data.desc || "—";
+
+  const tagsEl = document.getElementById("nodeTags");
+  tagsEl.innerHTML = "";
+  (d.data.tags || []).forEach(t => {
+    const span = document.createElement("span");
+    span.className = "tag";
+    // heurística simples pra colorir
+    const lower = t.toLowerCase();
+    if (lower.includes("risco") || lower.includes("pressão") || lower.includes("consequ")) span.classList.add("warn");
+    if (lower.includes("morte") || lower.includes("instável") || lower.includes("corrup") || lower.includes("custo")) span.classList.add("bad");
+    if (lower.includes("gancho") || lower.includes("reforma") || lower.includes("pacto") || lower.includes("sabedoria")) span.classList.add("good");
+    span.textContent = t;
+    tagsEl.appendChild(span);
+  });
+
+  // highlight selection
+  nodeLayer.selectAll("g.node").classed("highlight", n => n === d);
+}
+
+function centerOnRoot(){
+  const t = d3.zoomIdentity.translate(80, H()/2).scale(0.9);
+  svg.transition().duration(350).call(zoom.transform, t);
+}
+
+function expandPathTo(node){
+  // expande até a raiz
+  let cur = node;
+  while(cur){
+    if(cur._children){ cur.children = cur._children; cur._children = null; }
+    cur = cur.parent;
+  }
+}
+
+function dimAllExceptPath(target){
+  const pathSet = new Set();
+  let cur = target;
+  while(cur){ pathSet.add(cur); cur = cur.parent; }
+  nodeLayer.selectAll("g.node")
+    .classed("dim", n => !pathSet.has(n))
+    .classed("highlight", n => n === target);
+}
+
+function clearDim(){
+  nodeLayer.selectAll("g.node").classed("dim", false);
+}
+
+function findNodesByText(q){
+  const query = q.trim().toLowerCase();
+  if(!query) return [];
+  return root.descendants().filter(d => {
+    const t = (d.data.title||"") + " " + (d.data.subtitle||"") + " " + (d.data.desc||"");
+    return t.toLowerCase().includes(query);
+  });
+}
+
+// Search behavior: find first match, expand path, focus, dim others
+const searchInput = document.getElementById("search");
+let searchIndex = 0;
+let searchMatches = [];
+
+function focusNode(d){
+  // centraliza no nó
+  const current = d3.zoomTransform(svg.node());
+  const scale = Math.max(0.65, Math.min(1.2, current.k));
+  const tx = 120 - d.y * scale;
+  const ty = H()/2 - d.x * scale;
+  svg.transition().duration(350).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+searchInput.addEventListener("keydown", (e) => {
+  if(e.key === "Enter"){
+    const q = searchInput.value;
+    searchMatches = findNodesByText(q);
+    if(searchMatches.length === 0){
+      clearDim();
+      return;
+    }
+    // cicla pelos resultados
+    const node = searchMatches[searchIndex % searchMatches.length];
+    searchIndex++;
+
+    expandPathTo(node);
+    update(node);
+    dimAllExceptPath(node);
+    selectNode(node);
+    focusNode(node);
+  }
+});
+
+document.getElementById("expandAll").addEventListener("click", () => {
+  expand(root);
+  update(root);
+  clearDim();
+});
+document.getElementById("collapseAll").addEventListener("click", () => {
+  collapseAll();
+  clearDim();
+  centerOnRoot();
+});
+document.getElementById("center").addEventListener("click", () => centerOnRoot());
+
+// Clique no fundo limpa destaque/dim
+svg.on("click", () => {
+  clearDim();
+  nodeLayer.selectAll("g.node").classed("highlight", false);
+});
+
+// Render inicial
+update(root);
+centerOnRoot();
+selectNode(root);
+
+// Responsivo
+window.addEventListener("resize", () => update(root));
+</script>
+</body>
+</html>
